@@ -148,88 +148,38 @@ class Backtester:
 
 
 if __name__ == '__main__':
-    # Demo execution: run DataEngine pipeline and then backtest the resulting pair
-    # Behavior when run as a script:
-    # - If called with --demo, run the full pipeline (DataEngine -> Backtester) which will
-    #   download data via yfinance (convenience for quick demos).
-    # - Otherwise, prefer Person B's output: look for a CSV at 'pypairs/pair_output.csv'
-    #   (this file can be produced by DataEngine.run_full_pipeline(...).to_csv(...)).
-    #   If the CSV exists, backtest it. If not, print instructions and exit.
+    # Mandatory behavior: always run DataEngine to produce Z-Score output and then backtest.
     import sys
     import os
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    def _run_backtest_on_df(df):
-        bt = Backtester()
-        backtest_df = bt.run_backtest(df, entry_threshold=2.0, exit_threshold=0.0)
-        print('\nRows in dataset:', len(backtest_df))
-        print('\nLast 5 rows (prices, Z-Score, Position, Cumulative PnL):')
-        cols_to_show = [backtest_df.columns[0], backtest_df.columns[1], 'Z-Score', 'Position', 'Cumulative PnL']
-        cols_to_show = [c for c in cols_to_show if c in backtest_df.columns]
-        print(backtest_df[cols_to_show].tail().to_string())
-        final_pnl = backtest_df['Cumulative PnL'].iloc[-1]
-        print('\nFinal Cumulative PnL: ${:.4f}'.format(final_pnl))
+    # Ensure project root on sys.path
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
 
-    # If user passed --demo, run DataEngine to produce data (existing behavior)
-    if '--demo' in sys.argv:
-        try:
-            # Ensure project root importable
-            if project_root not in sys.path:
-                sys.path.insert(0, project_root)
+    try:
+        from pypairs.data_engine import DataEngine
+    except Exception as exc:
+        print('Failed to import DataEngine. Ensure Person B (data_engine.py) is present.')
+        raise
 
-            from pypairs.data_engine import DataEngine
+    print('Running DataEngine (mandatory) to compute Z-Score and pair...')
+    engine = DataEngine(verbose=False)
+    # Default tickers — adjust as needed
+    demo_tickers = ['F', 'GM', 'AAPL', 'MSFT']
+    result_df, pair_info = engine.run_full_pipeline(demo_tickers, period='1y')
 
-            print("Running demo: DataEngine -> Backtester (this will download data via yfinance)")
-            engine = DataEngine(verbose=False)
-            demo_tickers = ['F', 'GM', 'AAPL', 'MSFT']
-            result_df, pair_info = engine.run_full_pipeline(demo_tickers, period='1y')
+    ticker_a, ticker_b, corr = pair_info
+    print(f'Pair found: {ticker_a} & {ticker_b} (corr={corr:.4f})')
 
-            ticker_a, ticker_b, corr = pair_info
-            print('\nDemo Pair: {} & {} (corr={:.4f})'.format(ticker_a, ticker_b, corr))
-            _run_backtest_on_df(result_df)
+    # Run backtest on the freshly produced DataEngine output
+    bt = Backtester()
+    backtest_df = bt.run_backtest(result_df, entry_threshold=2.0, exit_threshold=0.0)
 
-        except Exception as exc:
-            print('Demo failed:', exc)
-            raise
-    else:
-        # Look for a CSV file produced by Person B
-        csv_path = os.path.join(project_root, 'pypairs', 'pair_output.csv')
-        if os.path.exists(csv_path):
-            print(f"Loading DataEngine output from {csv_path}")
-            df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
-            _run_backtest_on_df(df)
-        else:
-            # Ask user whether to run DataEngine to produce Person B's Z-Score output
-            print("Z-Score output (pypairs/pair_output.csv) was not found.")
-            resp = input("Would you like to compute the Z-Score now by running DataEngine to produce it? [y/N]: ")
-            if resp.strip().lower() in ('y', 'yes'):
-                try:
-                    # Ensure project root importable
-                    if project_root not in sys.path:
-                        sys.path.insert(0, project_root)
-
-                    from pypairs.data_engine import DataEngine
-
-                    print("Running DataEngine to produce Person B's output (this will download data via yfinance)")
-                    engine = DataEngine(verbose=False)
-                    # Use a small default set; the user can edit this or call DataEngine directly for custom sets
-                    demo_tickers = ['F', 'GM', 'AAPL', 'MSFT']
-                    result_df, pair_info = engine.run_full_pipeline(demo_tickers, period='1y')
-
-                    # Save output for future runs
-                    result_df.to_csv(csv_path)
-                    print(f"Saved DataEngine output (including 'Z-Score') to {csv_path}")
-
-                    ticker_a, ticker_b, corr = pair_info
-                    print('\nGenerated Pair: {} & {} (corr={:.4f})'.format(ticker_a, ticker_b, corr))
-                    _run_backtest_on_df(result_df)
-
-                except Exception as exc:
-                    print('Failed to run DataEngine:', exc)
-                    raise
-            else:
-                print("Aborting. To backtest, first produce Person B's Z-Score output (DataFrame with two price columns and 'Z-Score') and save it as:")
-                print(f"  {csv_path}")
-                print("You can produce it by calling DataEngine.run_full_pipeline(...) or run this script with --demo to run a quick demo:")
-                print("  .venv/bin/python pypairs/backtester.py --demo")
+    print('\nRows in dataset:', len(backtest_df))
+    cols_to_show = [backtest_df.columns[0], backtest_df.columns[1], 'Z-Score', 'Position', 'Cumulative PnL']
+    cols_to_show = [c for c in cols_to_show if c in backtest_df.columns]
+    print('\nLast 5 rows:')
+    print(backtest_df[cols_to_show].tail().to_string())
+    print('\nFinal Cumulative PnL: ${:.4f}'.format(backtest_df['Cumulative PnL'].iloc[-1]))
