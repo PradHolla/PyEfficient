@@ -1,5 +1,5 @@
 [project]
-name = "pyefficient"
+name = "pypairs"
 version = "0.1.0"
 description = "A Modern Portfolio Theory optimizer using Monte Carlo simulation."
 readme = "README.md"
